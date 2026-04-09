@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>AR Overdrive: Energy Mesh</title>
+  <title>AR 3D Circular Helix</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
     video { display: none; }
@@ -25,12 +25,12 @@
       return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
     }});
     
-    // Kept confidence slightly lower for faster tracking on all these lines
+    // Optimized for 1 hand to keep the 3D math running at high FPS
     hands.setOptions({
-      maxNumHands: 2, 
+      maxNumHands: 1, 
       modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
     });
 
     hands.onResults(onResults);
@@ -42,74 +42,97 @@
     });
     camera.start();
 
+    // Helper Math Function
+    function getDistance(p1, p2) {
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+
+    // Animation Variables
+    let time = 0;
+    let currentRadius = 40; // Base size
+    let targetRadius = 40;
+
     function onResults(results) {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
       const w = canvasElement.width;
       const h = canvasElement.height;
 
-      // Dark cinematic overlay
+      // Dark cinematic background
       canvasCtx.drawImage(results.image, 0, 0, w, h);
-      canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      canvasCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
       canvasCtx.fillRect(0, 0, w, h);
 
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
-        const hand1 = results.multiHandLandmarks[0];
-        const hand2 = results.multiHandLandmarks[1];
+      // Increment time for the rotation animation
+      time += 0.08; 
 
-        // 1. THE 21-POINT HOLOGRAPHIC CYLINDER
-        // Connects every single joint on Hand 1 to the same joint on Hand 2
-        for (let i = 0; i < 21; i++) {
-          const point1 = hand1[i];
-          const point2 = hand2[i];
+      // Smoothly animate the radius growing and shrinking
+      currentRadius += (targetRadius - currentRadius) * 0.1;
 
-          // Create a dynamic rainbow spectrum based on the joint number
-          const hue = (i / 21) * 360;
-          const color = `hsla(${hue}, 100%, 60%, 0.9)`;
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length === 1) {
+        const hand = results.multiHandLandmarks[0];
 
-          canvasCtx.beginPath();
-          canvasCtx.moveTo(point1.x * w, point1.y * h);
-          canvasCtx.lineTo(point2.x * w, point2.y * h);
-          
-          canvasCtx.shadowBlur = 10;
-          canvasCtx.shadowColor = color;
-          canvasCtx.strokeStyle = color;
-          canvasCtx.lineWidth = 3;
-          canvasCtx.stroke();
+        // Get the center of the palm (Landmark 9) to anchor the helix
+        const centerX = hand[9].x * w;
+        const centerY = hand[9].y * h;
+
+        // Check distance between Thumb (4) and Pinky (20)
+        const thumb = hand[4];
+        const pinky = hand[20];
+        const dist = getDistance(thumb, pinky);
+
+        // If thumb and pinky are touching, GROW! Otherwise, shrink back.
+        if (dist < 0.07) {
+            targetRadius = 250; // Max charged size
+        } else {
+            targetRadius = 40;  // Resting size
         }
 
-        // 2. THE SCI-FI SPIDERWEB (Cross-connections)
-        // Connects EVERY fingertip on Hand 1 to EVERY fingertip on Hand 2
-        const tips = [4, 8, 12, 16, 20]; // Thumb, Index, Middle, Ring, Pinky
+        // --- DRAW THE 3D CIRCULAR HELIX ---
+        // We draw two twisting paths to create a 3D DNA-style ring
+        const twists = 12; // How many times it wraps around the circle
+        const tubeThickness = currentRadius * 0.3; // The 3D thickness of the ring
         
-        canvasCtx.shadowBlur = 0; // Turn off glow for the web to save FPS
+        // Dynamic color that shifts over time and intensity
+        const hue = (time * 20 + currentRadius) % 360; 
         
-        for (let i = 0; i < tips.length; i++) {
-          for (let j = 0; j < tips.length; j++) {
-            const tip1 = hand1[tips[i]];
-            const tip2 = hand2[tips[j]];
+        canvasCtx.shadowBlur = 15;
+        canvasCtx.lineWidth = 3 + (currentRadius * 0.02); // Line gets thicker as it grows
 
-            canvasCtx.beginPath();
-            canvasCtx.moveTo(tip1.x * w, tip1.y * h);
-            canvasCtx.lineTo(tip2.x * w, tip2.y * h);
-            
-            // Faint cyan colored web
-            canvasCtx.strokeStyle = 'rgba(0, 255, 255, 0.2)'; 
-            canvasCtx.lineWidth = 1;
-            canvasCtx.stroke();
-          }
+        // Draw Strand 1
+        canvasCtx.beginPath();
+        for (let i = 0; i <= Math.PI * 2.05; i += 0.05) {
+            // Complex math mapping a 3D helix onto a 2D canvas
+            let x = centerX + (currentRadius + tubeThickness * Math.cos(i * twists + time)) * Math.cos(i);
+            let y = centerY + (currentRadius + tubeThickness * Math.cos(i * twists + time)) * Math.sin(i);
+            if (i === 0) canvasCtx.moveTo(x, y);
+            else canvasCtx.lineTo(x, y);
         }
+        canvasCtx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+        canvasCtx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+        canvasCtx.stroke();
 
-        // 3. DRAW GLOWING JOINTS
-        // Draw white dots on all 42 joints to anchor the lines
-        for (const landmarks of results.multiHandLandmarks) {
-          for (let i = 0; i < 21; i++) {
-            canvasCtx.beginPath();
-            canvasCtx.arc(landmarks[i].x * w, landmarks[i].y * h, 4, 0, 2 * Math.PI);
-            canvasCtx.fillStyle = 'white';
-            canvasCtx.fill();
-          }
+        // Draw Strand 2 (offset by 180 degrees / Math.PI to complete the 3D illusion)
+        canvasCtx.beginPath();
+        for (let i = 0; i <= Math.PI * 2.05; i += 0.05) {
+            let x = centerX + (currentRadius + tubeThickness * Math.cos(i * twists + time + Math.PI)) * Math.cos(i);
+            let y = centerY + (currentRadius + tubeThickness * Math.cos(i * twists + time + Math.PI)) * Math.sin(i);
+            if (i === 0) canvasCtx.moveTo(x, y);
+            else canvasCtx.lineTo(x, y);
         }
+        // Make the second strand a slightly different color for contrast
+        canvasCtx.strokeStyle = `hsl(${(hue + 40) % 360}, 100%, 60%)`;
+        canvasCtx.shadowColor = `hsl(${(hue + 40) % 360}, 100%, 60%)`;
+        canvasCtx.stroke();
+
+        // Optional: Draw a line between thumb and pinky so you can see the "trigger"
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(thumb.x * w, thumb.y * h);
+        canvasCtx.lineTo(pinky.x * w, pinky.y * h);
+        canvasCtx.strokeStyle = dist < 0.07 ? '#00FF00' : '#FF0000'; // Green when triggered, Red when open
+        canvasCtx.lineWidth = 2;
+        canvasCtx.shadowBlur = 0;
+        canvasCtx.stroke();
       }
     }
   </script>
