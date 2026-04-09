@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AR Gestures: Heart & Globe</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    video { display: none; }
+    /* Mirror the canvas so it acts like a mirror */
+    canvas { width: 100%; max-width: 900px; border-radius: 10px; border: 2px solid #444; transform: scaleX(-1); } 
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+    
+    hands.setOptions({
+      maxNumHands: 2, // We need both hands for this!
+      modelComplexity: 1,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
+
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => { await hands.send({image: videoElement}); },
+      width: 1280,
+      height: 720
+    });
+    camera.start();
+
+    // Helper function to calculate distance between two points
+    function getDistance(point1, point2) {
+      return Math.hypot(point1.x - point2.x, point1.y - point2.y);
+    }
+
+    // Helper to draw emojis right-side up (since our canvas is mirrored in CSS)
+    function drawIcon(icon, x, y, size) {
+      canvasCtx.save();
+      canvasCtx.translate(x, y);
+      canvasCtx.scale(-1, 1); // Un-mirror just the text
+      canvasCtx.font = `${size}px Arial`;
+      canvasCtx.textAlign = "center";
+      canvasCtx.textBaseline = "middle";
+      canvasCtx.fillText(icon, 0, 0);
+      canvasCtx.restore();
+    }
+
+    function onResults(results) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+      const w = canvasElement.width;
+      const h = canvasElement.height;
+
+      // Draw the video frame
+      canvasCtx.drawImage(results.image, 0, 0, w, h);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length === 2) {
+        const hand1 = results.multiHandLandmarks[0];
+        const hand2 = results.multiHandLandmarks[1];
+
+        // 1. Draw a connecting energy line between the wrists (Landmark 0)
+        canvasCtx.beginPath();
+        canvasCtx.moveTo(hand1[0].x * w, hand1[0].y * h);
+        canvasCtx.lineTo(hand2[0].x * w, hand2[0].y * h);
+        canvasCtx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+        canvasCtx.lineWidth = 8;
+        canvasCtx.stroke();
+
+        // 2. Gesture Recognition
+        // Check distance between Left Index Tip (8) and Right Index Tip (8)
+        const indexDist = getDistance(hand1[8], hand2[8]);
+        // Check distance between Left Thumb Tip (4) and Right Thumb Tip (4)
+        const thumbDist = getDistance(hand1[4], hand2[4]);
+
+        // If fingertips are close enough, a shape is formed!
+        if (indexDist < 0.08 && thumbDist < 0.08) {
+            
+            // Find the center point between the hands to draw the graphic
+            const centerX = ((hand1[8].x + hand2[8].x) / 2) * w;
+            const centerY = ((hand1[8].y + hand2[8].y) / 2) * h;
+
+            // Are index fingers pointing DOWN (Heart) or UP (Globe)?
+            // In canvas coordinates, a higher Y value means it is further DOWN the screen.
+            const indexY = (hand1[8].y + hand2[8].y) / 2;
+            const thumbY = (hand1[4].y + hand2[4].y) / 2;
+
+            if (indexY > thumbY) {
+                // Index tips are below thumb tips: Hand Heart!
+                drawIcon('❤️', centerX, centerY - 50, 150);
+            } else {
+                // Index tips are above thumb tips: Globe/Circle!
+                // Using an emoji to represent 3D globe for performance
+                drawIcon('🌍', centerX, centerY + 50, 150);
+            }
+        }
+
+        // Draw dots on all hand landmarks so you can see the tracking
+        for (const landmarks of results.multiHandLandmarks) {
+          for (const point of landmarks) {
+            canvasCtx.beginPath();
+            canvasCtx.arc(point.x * w, point.y * h, 3, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = 'white';
+            canvasCtx.fill();
+          }
+        }
+      }
+    }
+  </script>
+</body>
+</html>
